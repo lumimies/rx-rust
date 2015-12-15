@@ -1,0 +1,4 @@
+[package]
+name = "rxRust"
+version = "0.1.0"
+authors = ["Zohar Kelrich <lumimies@gmail.com>"]
