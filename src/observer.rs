@@ -26,15 +26,14 @@ impl<Inner: Drop> SubscriptionAdapter<Inner> {
     }
 }
 pub mod filter {
-    use std::marker::PhantomData;
     use super::{Observer, Observable, Subscribable, SubscriptionAdapter};
-    pub struct Filter<T, Inner, F : Fn(&T) -> bool> { f : F, inner : Inner, _t : PhantomData<T> }
-    impl<T, O, F: Fn(&T) ->bool> Observable for Filter<T,O,F> { type Item = T; }
-    struct FilterObserver<T,O : Observer<Item = T>, F : Fn(&T) -> bool> { f : F, o : O, _t : PhantomData<T> }
+    pub struct Filter<Inner : Observable, F : Fn(&Inner::Item) -> bool> { f : F, inner : Inner }
+    impl<O : Observable, F: Fn(&O::Item) ->bool> Observable for Filter<O,F> { type Item = O::Item; }
+    struct FilterObserver<O : Observer, F : Fn(&O::Item) -> bool> { f : F, o : O }
 
-    impl<T, O : Observer<Item = T>, F : Fn(&T) -> bool> Observer for FilterObserver<T, O, F> {
-        type Item = T;
-        fn on_next(self, value : T) -> Self {
+    impl<O : Observer, F : Fn(&O::Item) -> bool> Observer for FilterObserver<O, F> {
+        type Item = O::Item;
+        fn on_next(self, value : O::Item) -> Self {
             if (self.f)(&value) {
                 FilterObserver { o: self.o.on_next(value), ..self }
             } else { self }
@@ -44,21 +43,21 @@ pub mod filter {
         }
     }
 
-    impl<T, Q : Observer<Item = T>, O : Observable<Item = T> + Subscribable<FilterObserver<T, Q, F>>, F : Fn(&T)->bool> Subscribable<Q> for Filter<T,O,F> {
+    impl<Q : Observer<Item = O::Item>, O : Observable + Subscribable<FilterObserver<Q, F>>, F : Fn(&O::Item)->bool> Subscribable<Q> for Filter<O,F> {
         type Subscription = SubscriptionAdapter<O::Subscription>;
         fn subscribe(self, o : Q) -> Self::Subscription {
-            let observer = FilterObserver { f: self.f, o: o, _t: PhantomData };
+            let observer = FilterObserver { f: self.f, o: o };
             SubscriptionAdapter::<O::Subscription>::new(self.inner.subscribe(observer))
         }
     }
-    pub fn new<O : Observable, F : Fn(&O::Item) -> bool>(seq : O, f : F) -> Filter<O::Item,O,F> {
+    pub fn new<O : Observable, F : Fn(&O::Item) -> bool>(seq : O, f : F) -> Filter<O,F> {
         
-        Filter { inner: seq, f: f, _t: PhantomData}
+        Filter { inner: seq, f: f }
     }
     // add code here
 }
 
-pub fn filter<O, F>(seq : O, f : F) -> filter::Filter<O::Item, O, F>
+pub fn filter<O, F>(seq : O, f : F) -> filter::Filter<O, F>
     where O : Observable, F : Fn(&O::Item) -> bool {
     filter::new(seq,f)
 }
