@@ -1,4 +1,5 @@
-mod observer;
+pub mod observer;
+
 #[cfg(test)]
 use std::fmt::Debug;
 #[cfg(test)]

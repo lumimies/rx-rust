@@ -16,7 +16,7 @@ pub trait Observable {
     type Item;
 }
 
-struct SubscriptionAdapter<Inner : Drop> { _inner_subscription : Inner }
+pub struct SubscriptionAdapter<Inner : Drop> { _inner_subscription : Inner }
 impl<Inner : Drop> Drop for SubscriptionAdapter<Inner> {
     fn drop(&mut self) {}
 }
@@ -29,7 +29,7 @@ pub mod filter {
     use super::{Observer, Observable, Subscribable, SubscriptionAdapter};
     pub struct Filter<Inner : Observable, F : Fn(&Inner::Item) -> bool> { f : F, inner : Inner }
     impl<O : Observable, F: Fn(&O::Item) ->bool> Observable for Filter<O,F> { type Item = O::Item; }
-    struct FilterObserver<O : Observer, F : Fn(&O::Item) -> bool> { f : F, o : O }
+    pub struct FilterObserver<O : Observer, F : Fn(&O::Item) -> bool> { f : F, o : O }
 
     impl<O : Observer, F : Fn(&O::Item) -> bool> Observer for FilterObserver<O, F> {
         type Item = O::Item;
@@ -69,13 +69,13 @@ pub mod map {
     impl<T, Inner : Observable, F: Fn(Inner::Item) -> T> Observable for Map<T,Inner,F> {
         type Item = T;
     }
-    struct MapObserver<T, O : Observer, F : Fn(T) -> O::Item> { f : F, o : O, _t : PhantomData<T> }
+    pub struct MapObserver<T, O : Observer, F : Fn(T) -> O::Item> { f : F, o : O, _t : PhantomData<T> }
 
     impl<T, O: Observer, F : Fn(T) -> O::Item> Observer for MapObserver<T, O, F> {
         type Item = T;
         fn on_next(self, value : T) -> Self {
             let value = (self.f)(value);
-            MapObserver { f: self.f, o: self.o.on_next(value), _t: self._t }
+            MapObserver { o: self.o.on_next(value), ..self }
         }
         fn on_completed(self) {
             self.o.on_completed();
@@ -93,15 +93,18 @@ pub mod map {
 
 #[cfg(test)]
 pub mod test_source {
-    use std::sync::{Arc,Weak};
-    use std::iter::Iterator;
+    use std::iter::IntoIterator;
     use super::{Observer, Observable, Subscribable};
-    pub struct TestSequence<I : Iterator> { it : I }
-    impl<I : Iterator> Observable for TestSequence<I> { type Item = I::Item; }
-    struct Sub { _p : Arc<()> }
+
+    pub struct TestSequence<I : IntoIterator> { it : I }
+    impl<I : IntoIterator> Observable for TestSequence<I> { type Item = I::Item; }
+
+    pub struct Sub;
     impl Drop for Sub { fn drop(&mut self) {} }
-    pub fn from_iter<I: Iterator>(it : I) -> TestSequence<I> { TestSequence { it: it } }
-    impl<I : Iterator, Q : Observer<Item = I::Item>> Subscribable<Q> for TestSequence<I> {
+
+    pub fn from_iter<I: IntoIterator>(it : I) -> TestSequence<I> { TestSequence { it: it } }
+
+    impl<I : IntoIterator, Q : Observer<Item = I::Item>> Subscribable<Q> for TestSequence<I> {
         type Subscription = Sub;
         fn subscribe(self, o : Q) -> Self::Subscription {
             let mut o = o;
@@ -109,7 +112,7 @@ pub mod test_source {
                 o = o.on_next(x);
             }
             o.on_completed();
-            Sub { _p: Arc::new(()) }
+            Sub
         }
     }
 
