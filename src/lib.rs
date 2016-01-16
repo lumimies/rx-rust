@@ -27,6 +27,6 @@ fn it_works() {
 	let s = observer::test_source::from_iter((1..5).into_iter());
 	let s = observer::filter(s, |&x| { x > 2 });
 	 
-	 let observer : TestObserver<i32> = TestObserver { count: 0, target: 2, _t: std::marker::PhantomData };
+	 let observer = TestObserver { count: 0, target: 2, _t: std::marker::PhantomData };
 	 let subscription = s.subscribe(observer);
 }
