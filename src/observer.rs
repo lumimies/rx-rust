@@ -69,23 +69,23 @@ pub mod map {
     impl<T, Inner : Observable, F: Fn(Inner::Item) -> T> Observable for Map<T,Inner,F> {
         type Item = T;
     }
-    struct MapObserver<T, S, O : Observer<Item = S>, F : Fn(T) -> S> { f : F, o : O, _t : PhantomData<T>, _s : PhantomData<S> }
+    struct MapObserver<T, O : Observer, F : Fn(T) -> O::Item> { f : F, o : O, _t : PhantomData<T> }
 
-    impl<T, S, O: Observer<Item = S>, F : Fn(T) -> S> Observer for MapObserver<T, S, O, F> {
+    impl<T, O: Observer, F : Fn(T) -> O::Item> Observer for MapObserver<T, O, F> {
         type Item = T;
         fn on_next(self, value : T) -> Self {
             let value = (self.f)(value);
-            MapObserver { f: self.f, o: self.o.on_next(value), _t: self._t, _s: self._s}
+            MapObserver { f: self.f, o: self.o.on_next(value), _t: self._t }
         }
         fn on_completed(self) {
             self.o.on_completed();
         }
     }
 
-    impl<T, Q : Observer<Item = T>, O : Observable<Item = T> + Subscribable<MapObserver<Q::Item, T, Q, F>>, F : Fn(O::Item) -> T> Subscribable<Q> for Map<T, O, F> {
+    impl<T, Q : Observer, O : Observable<Item = T> + Subscribable<MapObserver<T, Q, F>>, F : Fn(O::Item) -> Q::Item> Subscribable<Q> for Map<Q::Item, O, F> {
         type Subscription = SubscriptionAdapter<O::Subscription>;
         fn subscribe(self, o : Q) -> Self::Subscription {
-            let observer = MapObserver { f: self.f, o: o, _t: PhantomData, _s: PhantomData };
+            let observer = MapObserver { f: self.f, o: o, _t: PhantomData };
             SubscriptionAdapter::<O::Subscription>::new(self.inner.subscribe(observer))
         }
     }
