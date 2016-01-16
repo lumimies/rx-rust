@@ -90,6 +90,25 @@ pub mod map {
         }
     }
 }
+pub mod never {
+    use std::marker::PhantomData;
+    use super::{Observable, Observer, Subscribable};
+    pub struct Never<T> { _t: PhantomData<T> }
+    impl<T> Observable for Never<T> {
+        type Item = T;
+    }
+    impl<T> Drop for Never<T> { fn drop(&mut self) {}}
+    impl<T, Q : Observer<Item = T>> Subscribable<Q> for Never<T> {
+        type Subscription = Never<T>;
+        fn subscribe(self, o : Q) -> Self::Subscription {
+            self
+        }
+    }
+    pub fn new<T>() -> Never<T> { Never { _t: PhantomData } }
+}
+fn never<T>() -> never::Never<T> { 
+    never::new::<T>()
+}
 
 #[cfg(test)]
 pub mod test_source {
