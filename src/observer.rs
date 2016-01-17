@@ -90,24 +90,44 @@ pub mod map {
         }
     }
 }
+pub struct DoNothingSub;
+impl Drop for DoNothingSub {
+    fn drop(&mut self) {}
+}
 pub mod never {
     use std::marker::PhantomData;
-    use super::{Observable, Observer, Subscribable};
+    use super::{Observable, Observer, Subscribable,DoNothingSub};
     pub struct Never<T> { _t: PhantomData<T> }
     impl<T> Observable for Never<T> {
         type Item = T;
     }
-    impl<T> Drop for Never<T> { fn drop(&mut self) {}}
     impl<T, Q : Observer<Item = T>> Subscribable<Q> for Never<T> {
-        type Subscription = Never<T>;
+        type Subscription = DoNothingSub;
         fn subscribe(self, o : Q) -> Self::Subscription {
-            self
+            DoNothingSub
         }
     }
     pub fn new<T>() -> Never<T> { Never { _t: PhantomData } }
 }
 fn never<T>() -> never::Never<T> { 
     never::new::<T>()
+}
+
+pub mod empty {
+    use std::marker::PhantomData;
+    use super::{Observable, Observer, Subscribable,DoNothingSub};
+    pub struct Empty<T> { _t: PhantomData<T> }
+    impl<T> Observable for Empty<T> {
+        type Item = T;
+    }
+    impl<T, Q : Observer<Item = T>> Subscribable<Q> for Empty<T> {
+        type Subscription = DoNothingSub;
+        fn subscribe(self, o : Q) -> Self::Subscription {
+            o.on_completed();
+            DoNothingSub
+        }
+    }
+    pub fn new<T>() -> Empty<T> { Empty { _t: PhantomData } }
 }
 
 #[cfg(test)]
