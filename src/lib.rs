@@ -28,5 +28,5 @@ fn it_works() {
 	let s = observer::filter(s, |&x| { x > 2 });
 	 
 	 let observer = TestObserver { count: 0, target: 2, _t: std::marker::PhantomData };
-	 let subscription = s.subscribe(observer);
+	 let _subscription = s.subscribe(observer);
 }

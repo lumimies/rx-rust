@@ -1,5 +1,3 @@
-
-use std::sync::{Mutex,Arc};
 pub trait Observer : Sized{
     type Item;
 	fn on_next(self, value : Self::Item) -> Option<Self>;
@@ -107,13 +105,13 @@ pub mod never {
     }
     impl<T, Q : Observer<Item = T>> Subscribable<Q> for Never<T> {
         type Subscription = DoNothingSub;
-        fn subscribe(self, o : Q) -> Self::Subscription {
+        fn subscribe(self, _o : Q) -> Self::Subscription {
             DoNothingSub
         }
     }
     pub fn new<T>() -> Never<T> { Never { _t: PhantomData } }
 }
-fn never<T>() -> never::Never<T> { 
+pub fn never<T>() -> never::Never<T> { 
     never::new::<T>()
 }
 
