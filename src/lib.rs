@@ -11,10 +11,10 @@ struct TestObserver<T> {
  #[cfg(test)]
  impl<T : Debug> observer::Observer for TestObserver<T> {
  	type Item = T;
- 	fn on_next(mut self, val : T) -> Self {
+ 	fn on_next(mut self, val : T) -> Option<Self> {
  		self.count += 1;
  		println!("{:?}", val);
- 		self
+ 		Some(self)
  	}
  	fn on_completed(self) {
  		assert!(self.count == self.target);

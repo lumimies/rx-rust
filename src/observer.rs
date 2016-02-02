@@ -1,7 +1,8 @@
 
-pub trait Observer {
+use std::sync::{Mutex,Arc};
+pub trait Observer : Sized{
     type Item;
-	fn on_next(self, value : Self::Item) -> Self;
+	fn on_next(self, value : Self::Item) -> Option<Self>;
 	fn on_completed(self);
 	// Not sure how the error stuff looks in Rust
 	// fn on_error(Self/*,???*/);
@@ -25,6 +26,7 @@ impl<Inner: Drop> SubscriptionAdapter<Inner> {
         SubscriptionAdapter { _inner_subscription: inner }
     }
 }
+
 pub mod filter {
     use super::{Observer, Observable, Subscribable, SubscriptionAdapter};
     pub struct Filter<Inner : Observable, F : Fn(&Inner::Item) -> bool> { f : F, inner : Inner }
@@ -33,10 +35,11 @@ pub mod filter {
 
     impl<O : Observer, F : Fn(&O::Item) -> bool> Observer for FilterObserver<O, F> {
         type Item = O::Item;
-        fn on_next(self, value : O::Item) -> Self {
+        fn on_next(self, value : O::Item) -> Option<Self> {
             if (self.f)(&value) {
-                FilterObserver { o: self.o.on_next(value), ..self }
-            } else { self }
+                let f = self.f;
+                self.o.on_next(value).map(|o| { FilterObserver { o: o, f: f }})
+            } else { Some(self) }
         }
         fn on_completed(self) {
             self.o.on_completed();
@@ -73,9 +76,10 @@ pub mod map {
 
     impl<T, O: Observer, F : Fn(T) -> O::Item> Observer for MapObserver<T, O, F> {
         type Item = T;
-        fn on_next(self, value : T) -> Self {
+        fn on_next(self, value : T) -> Option<Self> {
             let value = (self.f)(value);
-            MapObserver { o: self.o.on_next(value), ..self }
+            let f = self.f;
+            self.o.on_next(value).map(|o| { MapObserver { o: o, f: f, _t: PhantomData } })
         }
         fn on_completed(self) {
             self.o.on_completed();
@@ -129,6 +133,82 @@ pub mod empty {
     }
     pub fn new<T>() -> Empty<T> { Empty { _t: PhantomData } }
 }
+pub mod take {
+    use super::{Observable, Observer, Subscribable};
+    pub struct Take<Inner: Observable> { inner : Inner, count : i64 }
+    pub struct TakeObserver<Q : Observer> { inner: Q, count : i64 }
+    impl<Q : Observer> Observer for TakeObserver<Q> {
+        type Item = Q::Item;
+        fn on_next(mut self, val : Q::Item) -> Option<Self> {
+            if self.count > 0 {
+                let o =self.inner.on_next(val);
+                if o.is_none() {
+                    return None;
+                }
+                self.inner = o.unwrap();
+                self.count -= 1;
+                if self.count == 0 {
+                    self.inner.on_completed();
+                    return None;
+                }
+            }
+            Some(self)
+        }
+
+        fn on_completed(self) {
+            self.inner.on_completed();
+        }
+    }
+    impl<Inner: Observable> Observable for Take<Inner> {
+        type Item = Inner::Item;
+    }
+
+    impl<Q: Observer, Inner: Observable<Item = Q::Item> + Subscribable<TakeObserver<Q>>> Subscribable<Q> for Take<Inner> {
+        type Subscription = Inner::Subscription;
+        fn subscribe(self, observer: Q) -> Self::Subscription {
+            self.inner.subscribe(TakeObserver { inner: observer, count: self.count })
+        }
+    }
+
+}
+
+pub mod skip {
+    use super::{Observable, Observer, Subscribable};
+    pub struct Skip<Inner : Observable> { inner: Inner, count: u64 }
+
+    impl<Inner: Observable> Observable for Skip<Inner> {
+        type Item = Inner::Item;
+    }
+
+    impl<Q: Observer, Inner: Observable<Item = Q::Item> + Subscribable<SkipObserver<Q>>> Subscribable<Q> for Skip<Inner> {
+        type Subscription = Inner::Subscription;
+        fn subscribe(self, observer: Q) -> Self::Subscription {
+            self.inner.subscribe(SkipObserver { inner: observer, count: self.count })
+        }
+    }
+
+
+    pub struct SkipObserver<Q : Observer> { inner: Q, count: u64 }
+    impl<Q: Observer> Observer for SkipObserver<Q> {
+        type Item = Q::Item;
+        fn on_next(mut self, val: Q::Item) -> Option<Self> {
+            if self.count == 0 {
+                if let Some(next) = self.inner.on_next(val) {
+                self.inner = next;
+                } else {
+                    return None;
+                }
+            } else {
+                self.count -= 1;
+            }
+            Some(self)
+        }
+
+        fn on_completed(self) {
+            self.inner.on_completed();
+        }
+    }
+}
 
 #[cfg(test)]
 pub mod test_source {
@@ -148,7 +228,11 @@ pub mod test_source {
         fn subscribe(self, o : Q) -> Self::Subscription {
             let mut o = o;
             for x in self.it {
-                o = o.on_next(x);
+                if let Some(o2) = o.on_next(x) {
+                    o = o2;
+                } else {
+                    return Sub;
+                }
             }
             o.on_completed();
             Sub
