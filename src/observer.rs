@@ -17,13 +17,13 @@ pub trait Observable {
 
 pub mod filter {
     use super::{Observer, Observable, Subscribable};
-    pub struct Filter<Inner : Observable, F : Fn(&Inner::Item) -> bool> { f : F, inner : Inner }
-    impl<O : Observable, F: Fn(&O::Item) ->bool> Observable for Filter<O,F> { type Item = O::Item; }
-    pub struct FilterObserver<O : Observer, F : Fn(&O::Item) -> bool> { f : F, o : O }
+    pub struct Filter<Inner : Observable, F : FnMut(&Inner::Item) -> bool> { f : F, inner : Inner }
+    impl<O : Observable, F: FnMut(&O::Item) ->bool> Observable for Filter<O,F> { type Item = O::Item; }
+    pub struct FilterObserver<O : Observer, F : FnMut(&O::Item) -> bool> { f : F, o : O }
 
-    impl<O : Observer, F : Fn(&O::Item) -> bool> Observer for FilterObserver<O, F> {
+    impl<O : Observer, F : FnMut(&O::Item) -> bool> Observer for FilterObserver<O, F> {
         type Item = O::Item;
-        fn on_next(self, value : O::Item) -> Option<Self> {
+        fn on_next(mut self, value : O::Item) -> Option<Self> {
             if (self.f)(&value) {
                 let f = self.f;
                 self.o.on_next(value).map(|o| { FilterObserver { o: o, f: f }})
@@ -34,14 +34,14 @@ pub mod filter {
         }
     }
 
-    impl<Q : Observer<Item = O::Item>, O : Observable + Subscribable<FilterObserver<Q, F>>, F : Fn(&O::Item)->bool> Subscribable<Q> for Filter<O,F> {
+    impl<Q : Observer<Item = O::Item>, O : Observable + Subscribable<FilterObserver<Q, F>>, F : FnMut(&O::Item)->bool> Subscribable<Q> for Filter<O,F> {
         type Subscription = O::Subscription;
         fn subscribe(self, o : Q) -> Self::Subscription {
             let observer = FilterObserver { f: self.f, o: o };
             self.inner.subscribe(observer)
         }
     }
-    pub fn new<O : Observable, F : Fn(&O::Item) -> bool>(seq : O, f : F) -> Filter<O,F> {
+    pub fn new<O : Observable, F : FnMut(&O::Item) -> bool>(seq : O, f : F) -> Filter<O,F> {
         
         Filter { inner: seq, f: f }
     }
@@ -49,24 +49,24 @@ pub mod filter {
 }
 
 pub fn filter<O, F>(seq : O, f : F) -> filter::Filter<O, F>
-    where O : Observable, F : Fn(&O::Item) -> bool {
+    where O : Observable, F : FnMut(&O::Item) -> bool {
     filter::new(seq,f)
 }
 
 pub mod map {
     use std::marker::PhantomData;
     use super::{Observer, Observable, Subscribable};
-    pub struct Map<T, Inner : Observable, F: Fn(Inner::Item) -> T> { f : F, inner : Inner, _t:PhantomData<T> }
-    impl<T, Inner : Observable, F: Fn(Inner::Item) -> T> Observable for Map<T,Inner,F> {
+    pub struct Map<T, Inner : Observable, F: FnMut(Inner::Item) -> T> { f : F, inner : Inner, _t:PhantomData<T> }
+    impl<T, Inner : Observable, F: FnMut(Inner::Item) -> T> Observable for Map<T,Inner,F> {
         type Item = T;
     }
-    pub struct MapObserver<T, O : Observer, F : Fn(T) -> O::Item> { f : F, o : O, _t : PhantomData<T> }
+    pub struct MapObserver<T, O : Observer, F : FnMut(T) -> O::Item> { f : F, o : O, _t : PhantomData<T> }
 
-    impl<T, O: Observer, F : Fn(T) -> O::Item> Observer for MapObserver<T, O, F> {
+    impl<T, O: Observer, F : FnMut(T) -> O::Item> Observer for MapObserver<T, O, F> {
         type Item = T;
         fn on_next(self, value : T) -> Option<Self> {
-            let value = (self.f)(value);
-            let f = self.f;
+            let mut f = self.f;
+            let value = f(value);
             self.o.on_next(value).map(|o| { MapObserver { o: o, f: f, _t: PhantomData } })
         }
         fn on_completed(self) {
@@ -74,7 +74,7 @@ pub mod map {
         }
     }
 
-    impl<T, Q : Observer, O : Observable<Item = T> + Subscribable<MapObserver<T, Q, F>>, F : Fn(O::Item) -> Q::Item> Subscribable<Q> for Map<Q::Item, O, F> {
+    impl<T, Q : Observer, O : Observable<Item = T> + Subscribable<MapObserver<T, Q, F>>, F : FnMut(O::Item) -> Q::Item> Subscribable<Q> for Map<Q::Item, O, F> {
         type Subscription = O::Subscription;
         fn subscribe(self, o : Q) -> Self::Subscription {
             let observer = MapObserver { f: self.f, o: o, _t: PhantomData };
@@ -155,6 +155,43 @@ pub mod take {
         type Subscription = Inner::Subscription;
         fn subscribe(self, observer: Q) -> Self::Subscription {
             self.inner.subscribe(TakeObserver { inner: observer, count: self.count })
+        }
+    }
+
+}
+
+pub mod take_while {
+    use super::{Observable, Observer, Subscribable};
+    pub struct TakeWhile<Inner: Observable, F: FnMut(&Inner::Item) -> bool> { inner : Inner, f: F }
+    pub struct TakeWhileObserver<Q : Observer, F: FnMut(&Q::Item) -> bool> { inner: Q, f: F }
+    impl<Q : Observer, F: FnMut(&Q::Item) -> bool> Observer for TakeWhileObserver<Q, F> {
+        type Item = Q::Item;
+        fn on_next(mut self, val : Q::Item) -> Option<Self> {
+            if (self.f)(&val) {
+                let o = self.inner.on_next(val);
+                if o.is_none() {
+                    return None;
+                }
+                self.inner = o.unwrap();
+                Some(self)
+            } else {
+                self.inner.on_completed();
+                None
+            }
+        }
+
+        fn on_completed(self) {
+            self.inner.on_completed();
+        }
+    }
+    impl<Inner: Observable, F : FnMut(&Inner::Item) -> bool> Observable for TakeWhile<Inner, F> {
+        type Item = Inner::Item;
+    }
+
+    impl<Q: Observer, F: FnMut(&Inner::Item) -> bool, Inner: Observable<Item = Q::Item> + Subscribable<TakeWhileObserver<Q, F>>> Subscribable<Q> for TakeWhile<Inner, F> {
+        type Subscription = Inner::Subscription;
+        fn subscribe(self, observer: Q) -> Self::Subscription {
+            self.inner.subscribe(TakeWhileObserver { inner: observer, f: self.f })
         }
     }
 
