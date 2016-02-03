@@ -15,18 +15,8 @@ pub trait Observable {
     type Item;
 }
 
-pub struct SubscriptionAdapter<Inner : Drop> { _inner_subscription : Inner }
-impl<Inner : Drop> Drop for SubscriptionAdapter<Inner> {
-    fn drop(&mut self) {}
-}
-impl<Inner: Drop> SubscriptionAdapter<Inner> {
-    pub fn new(inner : Inner) -> Self {
-        SubscriptionAdapter { _inner_subscription: inner }
-    }
-}
-
 pub mod filter {
-    use super::{Observer, Observable, Subscribable, SubscriptionAdapter};
+    use super::{Observer, Observable, Subscribable};
     pub struct Filter<Inner : Observable, F : Fn(&Inner::Item) -> bool> { f : F, inner : Inner }
     impl<O : Observable, F: Fn(&O::Item) ->bool> Observable for Filter<O,F> { type Item = O::Item; }
     pub struct FilterObserver<O : Observer, F : Fn(&O::Item) -> bool> { f : F, o : O }
@@ -45,10 +35,10 @@ pub mod filter {
     }
 
     impl<Q : Observer<Item = O::Item>, O : Observable + Subscribable<FilterObserver<Q, F>>, F : Fn(&O::Item)->bool> Subscribable<Q> for Filter<O,F> {
-        type Subscription = SubscriptionAdapter<O::Subscription>;
+        type Subscription = O::Subscription;
         fn subscribe(self, o : Q) -> Self::Subscription {
             let observer = FilterObserver { f: self.f, o: o };
-            SubscriptionAdapter::<O::Subscription>::new(self.inner.subscribe(observer))
+            self.inner.subscribe(observer)
         }
     }
     pub fn new<O : Observable, F : Fn(&O::Item) -> bool>(seq : O, f : F) -> Filter<O,F> {
@@ -65,7 +55,7 @@ pub fn filter<O, F>(seq : O, f : F) -> filter::Filter<O, F>
 
 pub mod map {
     use std::marker::PhantomData;
-    use super::{Observer, Observable, Subscribable, SubscriptionAdapter};
+    use super::{Observer, Observable, Subscribable};
     pub struct Map<T, Inner : Observable, F: Fn(Inner::Item) -> T> { f : F, inner : Inner, _t:PhantomData<T> }
     impl<T, Inner : Observable, F: Fn(Inner::Item) -> T> Observable for Map<T,Inner,F> {
         type Item = T;
@@ -85,10 +75,10 @@ pub mod map {
     }
 
     impl<T, Q : Observer, O : Observable<Item = T> + Subscribable<MapObserver<T, Q, F>>, F : Fn(O::Item) -> Q::Item> Subscribable<Q> for Map<Q::Item, O, F> {
-        type Subscription = SubscriptionAdapter<O::Subscription>;
+        type Subscription = O::Subscription;
         fn subscribe(self, o : Q) -> Self::Subscription {
             let observer = MapObserver { f: self.f, o: o, _t: PhantomData };
-            SubscriptionAdapter::<O::Subscription>::new(self.inner.subscribe(observer))
+            self.inner.subscribe(observer)
         }
     }
 }
