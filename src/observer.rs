@@ -22,7 +22,7 @@ pub trait Observable: Sized {
 pub mod filter {
     use super::{Observer, Observable, Subscribable};
     pub struct Filter<Inner: Observable, F: FnMut(&Inner::Item) -> bool> { f: F, inner: Inner }
-    impl<O: Observable, F: FnMut(&O::Item) ->bool> Observable for Filter<O,F> { type Item = O::Item; }
+    impl<O: Observable, F: FnMut(&O::Item) ->bool> Observable for Filter<O, F> { type Item = O::Item; }
     pub struct FilterObserver<Q: Observer, F: FnMut(&Q::Item) -> bool> { f: F, inner: Q }
 
     impl<Q: Observer, F: FnMut(&Q::Item) -> bool> Observer for FilterObserver<Q, F> {
