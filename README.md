@@ -11,3 +11,4 @@ Part of my goal is to have a lot of information statically available, which will
 * Allow support for virtualisation, which will probably require wrapping an abstract stream somehow
 * Figure out how to represent abnormal stream termination, possibly by parameterising over an additional error type
 * Figure out how to handle schedulers
+* Add more combinators
