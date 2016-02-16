@@ -161,7 +161,9 @@ pub mod take {
             self.inner.subscribe(TakeObserver { inner: observer, count: self.count })
         }
     }
-
+    pub fn new<O: Observable>(inner: O, count: i64) -> Take<O> {
+        Take { inner: inner, count: count }
+    }
 }
 
 pub mod take_while {
@@ -294,8 +296,7 @@ pub mod test_source {
 
     impl<I: IntoIterator, Q: Observer<Item = I::Item>> Subscribable<Q> for TestSequence<I> {
         type Subscription = Sub;
-        fn subscribe(self, o: Q) -> Self::Subscription {
-            let mut o = o;
+        fn subscribe(self, mut o: Q) -> Self::Subscription {
             for x in self.it {
                 if let Some(o2) = o.on_next(x) {
                     o = o2;
