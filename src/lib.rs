@@ -56,7 +56,7 @@ mod test_observer {
 }
 #[test]
 fn it_works() {
-	use observer::{Subscribable, Observable};
+	use observer::Observable;
 	let s = observer::from_iter(1..5).filter(|&x| x > 2);
 	 
 	let observer = test_observer::new(2);
@@ -66,7 +66,7 @@ fn it_works() {
 
 #[test]
 fn take_works() {
-	use observer::{Subscribable, Observable};
+	use observer::Observable;
 
 	let s = observer::from_iter(1..5).take(3);
 	let observer = test_observer::new(3);
@@ -76,8 +76,7 @@ fn take_works() {
 
 #[test]
 fn never_works() {
-	use observer::{Subscribable};
-
+	use observer::Observable;
 	let s = observer::never::<i32>();
 	let observer = test_observer::new(3);
 	let _completion = observer.ensure_no_completion();
