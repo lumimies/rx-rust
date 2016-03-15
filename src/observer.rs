@@ -21,9 +21,15 @@ pub trait Observable: Sized {
     fn take(self, count: u64) -> take::Take<Self> {
         take::new(self, count)
     }
+
     fn take_while<F: FnMut(&Self::Item) -> bool>(self, f: F) -> take_while::TakeWhile<Self, F> {
         take_while::new(self, f)
     }
+
+    fn take_until<F: FnMut(&Self::Item) -> bool>(self, f: F) -> take_until::TakeUntil<Self, F> {
+        take_until::new(self, f)
+    }
+    
     fn concat<O2: Observable<Item = Self::Item>>(self, other: O2) -> concat::Concat<Self, O2> {
         concat::new(self, other)
     }
@@ -169,6 +175,42 @@ pub mod take {
     }
     pub fn new<O: Observable>(inner: O, count: u64) -> Take<O> {
         Take { inner: inner, count: count }
+    }
+}
+
+pub mod take_until {
+    use super::{Observable, Observer};
+    pub struct TakeUntil<O: Observable, F: FnMut(&O::Item) -> bool> { inner: O, f: F }
+    pub struct TakeUntilObserver<Q: Observer, F: FnMut(&Q::Item) -> bool> { inner: Q, f: F }
+    impl<Q: Observer, F: FnMut(&Q::Item) -> bool> Observer for TakeUntilObserver<Q, F> {
+        type Item = Q::Item;
+        fn on_next(mut self, val: Self::Item) -> Option<Self> {
+            let is_end = (self.f)(&val);
+            let o = self.inner.on_next(val);
+            if o.is_none() {
+                return None;
+            }
+            self.inner = o.unwrap();
+            if is_end {
+                self.inner.on_completed();
+                return None;
+            }
+            Some(self)
+        }
+
+        fn on_completed(self) {
+            self.inner.on_completed();
+        }
+    }
+    impl<O: Observable, F: FnMut(&O::Item) -> bool> Observable for TakeUntil<O, F> {
+        type Item = O::Item;
+        type Subscription = O::Subscription;
+        fn subscribe<Q: Observer<Item = Self::Item>>(self, observer: Q) -> Self::Subscription {
+            self.inner.subscribe(TakeUntilObserver { inner: observer, f: self.f })
+        }
+    }
+    pub fn new<O: Observable, F: FnMut(&O::Item) -> bool>(inner: O, f: F) -> TakeUntil<O, F> {
+        TakeUntil { inner: inner, f: f }
     }
 }
 
