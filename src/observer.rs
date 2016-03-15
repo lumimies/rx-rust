@@ -24,6 +24,9 @@ pub trait Observable: Sized {
     fn take_while<F: FnMut(&Self::Item) -> bool>(self, f: F) -> take_while::TakeWhile<Self, F> {
         take_while::new(self, f)
     }
+    fn concat<O2: Observable<Item = Self::Item>>(self, other: O2) -> concat::Concat<Self, O2> {
+        concat::new(self, other)
+    }
 }
 
 pub mod filter {
@@ -275,6 +278,80 @@ pub mod skip_while {
         fn on_completed(self) {
             self.inner.on_completed();
         }
+    }
+}
+
+pub mod concat {
+    use std::sync::{Arc, Weak, Mutex};
+    use std::mem;
+    use super::{Observer, Observable};
+    pub struct Concat<O1, O2> { seq1: O1, seq2: O2 }
+    pub struct ConcatObserver<Q, O2: Observable, Sub1> { observer: Q, seq2: O2, sub: Weak<Mutex<EitherSub<Sub1, O2::Subscription>>> }
+
+    enum EitherSub<Sub1, Sub2> {
+        Initial,
+        Sub1(Sub1),
+        Sub2(Sub2),
+        Done
+    }
+
+    pub struct SwitchingSubscription<Sub1, Sub2>(Arc<Mutex<EitherSub<Sub1, Sub2>>>);
+
+    impl<Sub1, Sub2> Drop for SwitchingSubscription<Sub1, Sub2> {
+        fn drop(&mut self) {
+            let mut sub = EitherSub::Done;
+            {
+                sub = mem::replace(&mut *self.0.lock().unwrap(), sub);
+            }
+        }
+    }
+    impl<Q: Observer, O2: Observable<Item = Q::Item>, Sub1> Observer for ConcatObserver<Q, O2, Sub1> {
+        type Item = Q::Item;
+        fn on_next(mut self, value: Self::Item) -> Option<Self> {
+            if let Some(next) = self.observer.on_next(value) {
+                self.observer = next;
+                Some(self)
+            } else {
+                None
+            }
+        }
+        fn on_completed(self) {
+            if let Some(submutex) = self.sub.upgrade() {
+                if let EitherSub::Done = *submutex.lock().unwrap() {
+                    return;
+                }
+                let next_sub = self.seq2.subscribe(self.observer);
+                let mut sub_releaser = EitherSub::Sub2(next_sub);
+                {
+                    let mut subplace = submutex.lock().unwrap();
+                    if let EitherSub::Done = *subplace {
+                        return;
+                    }
+                    sub_releaser = mem::replace(&mut *subplace, sub_releaser);
+                }
+
+            }
+        }
+    }
+    impl<O1: Observable, O2: Observable<Item = O1::Item>> Observable for Concat<O1, O2> {
+        type Item = O1::Item;
+        type Subscription = SwitchingSubscription<O1::Subscription, O2::Subscription>;
+        fn subscribe<Q: Observer<Item = Self::Item>>(self, observer: Q) -> Self::Subscription {
+            let sub_holder = Arc::new(Mutex::new(EitherSub::Initial as EitherSub<O1::Subscription, O2::Subscription>));
+            let weak_sub = Arc::downgrade(&sub_holder);
+            let o = ConcatObserver { observer: observer, seq2: self.seq2, sub: weak_sub };
+            let sub = self.seq1.subscribe(o);
+            {
+                let mut holder = sub_holder.lock().unwrap();
+                if let EitherSub::Initial = *holder {
+                    *holder = EitherSub::Sub1(sub);
+                }
+            }
+            SwitchingSubscription(sub_holder)
+        }
+    }
+    pub fn new<O1: Observable, O2: Observable<Item = O1::Item>>(seq1: O1, seq2: O2) -> Concat<O1, O2> {
+        Concat { seq1: seq1, seq2: seq2 }
     }
 }
 
